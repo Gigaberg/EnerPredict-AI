@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>About — EnerPredict AI</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <a href="index.html" class="brand">EnerPredict AI</a>
+    <div class="nav-links">
+      <a href="appliance.html">Appliances</a>
+      <a href="prediction.html">Prediction</a>
+      <a href="solar.html">Solar Calc</a>
+      <a href="dashboard.html">Dashboard</a>
+      <a href="about.html">About</a>
+    </div>
+  </nav>
+
+  <main class="container">
+    <h2>About EnerPredict AI</h2>
+
+<p>
+<b>EnerPredict AI</b> is a smart energy analytics platform developed as part of the 
+<b>AI for Renewable Energy</b> mini-project. It combines 
+machine learning, appliance-level modeling, and intuitive web dashboards to help users 
+understand and optimize their household energy consumption.
+</p>
+
+<h3>What the system does</h3>
+<ul>
+  <li><b>Predicts monthly electricity consumption</b> using trained ML models 
+      (XGBoost, Random Forest, Linear Regression).</li>
+  <li><b>Analyzes appliance-wise energy usage</b> to identify wastage or inefficiency.</li>
+  <li><b>Provides solar sizing recommendations</b> based on user demand and panel specs.</li>
+  <li><b>Validates inputs intelligently</b> using a hybrid dataset-driven + rule-based system.</li>
+  <li><b>Visualizes predictions and usage trends</b> using interactive dashboards.</li>
+</ul>
+
+<h3>Machine Learning</h3>
+<p>
+The backend uses trained models on a cleaned household energy dataset.  
+StandardScaler preprocessing and a strict feature-order pipeline ensure accurate predictions.  
+XGBoost typically delivers the highest accuracy, while Linear Regression is the fastest.
+</p>
+
+<h3>Key Features</h3>
+<ul>
+  <li>Interactive prediction interface with auto-fill, tooltips, and smart suggestions.</li>
+  <li>Hybrid validation engine using statistical percentiles and domain rules.</li>
+  <li>Local storage for appliance lists and prediction history.</li>
+  <li>Solar calculator and idle/wasted energy insights.</li>
+  <li>Modern UI built with HTML, CSS, JavaScript, and Chart.js.</li>
+  <li>REST API backend built in Python + Flask.</li>
+</ul>
+
+<h3>Project Motivation</h3>
+<p>
+The goal of this project is to demonstrate how AI can be applied in the renewable 
+energy domain to improve household energy efficiency, reduce wastage, and make solar 
+deployment more informed and accessible.
+</p>
+
+<h3>Developed by</h3>
+<p>
+2nd Year B.Tech — Artificial Intelligence & Machine Learning Students
+</p>
+
+<p class="small-muted">
+This is a 3rd semester mini-project for the subject <b>AI for Renewable Energy</b>.
+</p>
+
+    </ul>
+  </main>
+</body>
+</html>
+

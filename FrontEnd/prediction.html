@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Prediction — EnerPredict AI</title>
+
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+
+  <style>
+    /* page-specific tweaks (kept similar to your previous layout) */
+    .predict-wrapper { max-width: 980px; margin: 28px auto; padding: 20px; }
+    .predict-grid { display:grid; grid-template-columns: 1fr 360px; gap: 28px; align-items:start; }
+    .predict-form { padding:18px; }
+    .predict-form label { display:block; margin-top:12px; font-weight:600; color:#333; }
+    .predict-form input[type="number"], .predict-form input[type="text"], .predict-form select {
+      width:100%; padding:8px 10px; border-radius:8px; border:1px solid #e4e0df; margin-top:6px;
+    }
+    .predict-actions { margin-top:14px; display:flex; gap:10px; align-items:center; }
+    .result-card { padding:14px; border-radius:12px; background:#fff; box-shadow:0 6px 18px rgba(0,0,0,0.04); }
+    .small-muted { color:#666; font-size:13px; }
+    .spinner { display:inline-block; width:18px; height:18px; border:3px solid rgba(0,0,0,0.08); border-top-color:#ff8c00; border-radius:50%; animation:spin 0.9s linear infinite; vertical-align:middle; margin-left:8px; }
+    @keyframes spin{ to { transform:rotate(360deg); } }
+    .disabled { opacity:0.7; pointer-events:none; }
+    .field-inline { display:flex; align-items:center; gap:8px; }
+    .suggest-btn { background:transparent; border:none; color:#ff8c00; cursor:pointer; font-weight:700; padding:6px; border-radius:6px; }
+    .calculated-pill { display:inline-block; background:#eef7ff; color:#2266aa; padding:3px 6px; border-radius:8px; font-size:12px; margin-left:8px; }
+    .input-range { font-size:12px; color:#666; margin-top:4px; }
+    .small-action { font-size:13px; color:#666; margin-left:8px; }
+    .field-row { display:flex; gap:12px; align-items:center; }
+    .help-small { font-size:12px; color:#777; margin-top:6px; }
+    @media (max-width:980px) { .predict-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body class="prediction-page">
+
+  <nav class="nav">
+    <a href="index.html" class="brand">EnerPredict AI</a>
+    <div class="nav-links">
+      <a href="appliance.html">Appliances</a>
+      <a href="prediction.html" class="active">Prediction</a>
+      <a href="solar.html">Solar Calc</a>
+      <a href="dashboard.html">Dashboard</a>
+      <a href="about.html">About</a>
+    </div>
+  </nav>
+
+  <main class="container">
+    <div class="predict-wrapper card">
+      <h2>Energy Prediction</h2>
+      <p class="small-muted">Quickly estimate monthly kWh using a selected model. Suggestions and ranges are data-driven.</p>
+
+      <div class="predict-grid">
+
+        <!-- left: dynamic form -->
+        <div class="predict-form">
+          <div style="margin-bottom:10px;">
+            <button id="import-appliances-btn" class="btn" type="button">Import appliances</button>
+            <span id="import-appliances-hint" style="margin-left:10px;color:#666;font-size:13px"></span>
+          </div>
+
+          <label for="modelSelect">Choose model <span class="small-muted">?</span></label>
+          <select id="modelSelect"><option>Loading models…</option></select>
+          <div id="modelDescription" style="margin-top:8px;color:#555;font-size:13px"></div>
+
+          <form id="predictForm" style="margin-top:12px;">
+            <!-- dynamic fields will be injected here -->
+            <div id="dynamicFields"></div>
+
+            <!-- auto-fill controls and suggest fixes -->
+            <div style="margin-top:12px; display:flex; align-items:center; gap:12px;">
+              <label style="font-weight:600;">
+                <input id="autoFillToggle" type="checkbox" style="margin-right:8px" />
+                Auto-fill related fields
+              </label>
+
+              <button id="suggestFixes" type="button" class="btn" style="background:#f0f0f0;color:#222;border:1px solid #ddd;">
+                Suggest fixes
+              </button>
+
+              <span id="suggestNote" class="small-action">Auto-fill disabled.</span>
+            </div>
+
+            <div class="predict-actions">
+              <button id="get-prediction" class="btn" type="submit">Get Prediction</button>
+              <button id="clear-history" class="btn" type="button" style="background:#ddd;color:#222;">Clear History</button>
+              <span id="loadingIndicator"></span>
+            </div>
+          </form>
+        </div>
+
+        <!-- right: result area + history chart -->
+        <div>
+          <div id="resultArea" class="result-card" aria-live="polite" role="status">
+            <div style="color:#888">Results will appear here after prediction.</div>
+          </div>
+
+          <div style="margin-top:14px" class="result-card">
+            <div style="font-weight:700; margin-bottom:8px">Recent predictions</div>
+            <canvas id="predictionHistoryChart" width="340" height="220"></canvas>
+            <div style="margin-top:10px; font-size:13px; color:#666;">History saved locally (last 30 entries).</div>
+          </div>
+        </div>
+
+      </div> <!-- predict-grid -->
+    </div> <!-- predict-wrapper -->
+  </main>
+
+  <script src="js/predict.js" defer></script>
+</body>
+</html>

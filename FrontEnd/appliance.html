@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Appliance Input — EnerPredict AI</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <a href="index.html" class="brand">EnerPredict AI</a>
+    <div class="nav-links">
+      <a href="appliance.html">Appliances</a>
+      <a href="prediction.html">Prediction</a>
+      <a href="solar.html">Solar Calc</a>
+      <a href="dashboard.html">Dashboard</a>
+      <a href="about.html">About</a>
+    </div>
+  </nav>
+
+  <main class="container">
+    <h2>Appliance Inputs</h2>
+    <p>Add appliances and their power (W), hours/day, quantity.</p>
+
+    <form id="appliance-form" onsubmit="return false;">
+      <div id="appliance-list"></div>
+
+      <div class="row">
+        <input id="name" placeholder="Appliance (e.g., Fridge)" />
+        <input id="power" placeholder="Power (W)" type="number" />
+        <input id="hours" placeholder="Hours/day" type="number" step="0.1" />
+        <input id="qty" placeholder="Quantity" type="number" value="1"/>
+        <button id="add-btn" class="btn">Add Appliance</button>
+      </div>
+
+      <div class="row">
+        <button id="calc-local" class="btn">Calculate (Local)</button>
+        <button id="send-backend" class="btn secondary">Send to Backend</button>
+      </div>
+    </form>
+
+    <div class="result card" id="result-card" style="display:none;">
+      <h3>Summary</h3>
+      <p id="summary"></p>
+    </div>
+  </main>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
