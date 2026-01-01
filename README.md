@@ -136,7 +136,19 @@ EnerPredict-AI/
 
 │ ├── css/
 
+│ │ └── style.css
+
+│ ├── models/
+
+│ │ ├── feature_order.json
+
+│ │ └── validation_rules.json
+
 │ └── js/
+
+│ │ ├── app.js
+
+│ │ └── predict.js
 
 │
 
