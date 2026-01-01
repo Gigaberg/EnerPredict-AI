@@ -1,0 +1,14 @@
+[
+  "total_appliance_power",
+  "appliance_count",
+  "avg_power_per_appliance",
+  "MonthlyHours",
+  "TariffRate",
+  "consumption_per_hour",
+  "SolarGeneration_kWh",
+  "GridConsumption_kWh",
+  "EnergySold_kWh",
+  "Month_num",
+  "City_code",
+  "Company_code"
+]
