@@ -1,21 +1,36 @@
 # services/ai_service.py
 import os
+import sys
+from pathlib import Path
 import joblib
 import numpy as np
 import json
 from typing import Dict, List, Optional
 
-# location where backend will look for models (env var supported)
-# When uvicorn is started from AIRES_Backend/, MODEL_DIR="data" points to AIRES_Backend/data
-MODEL_DIR = os.getenv("MODEL_DIR", "data")
+# Ensure project root is on sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-# map short model keys to actual filenames + friendly names
-# These names match the files you produced during training
-MODEL_REGISTRY = {
-    "linear": {"file": "linear_regression.pkl", "name": "Linear Regression"},
-    "rf": {"file": "random_forest.pkl", "name": "Random Forest"},
-    "xgb": {"file": "xgboost_regressor.pkl", "name": "XGBoost Regressor"},
-}
+try:
+    from src.models.registry import MODEL_REGISTRY
+except ImportError:
+    # Fallback definition if run standalone
+    MODEL_REGISTRY = {
+        "linear": {"file": "linear_regression.pkl", "name": "Linear Regression"},
+        "ridge": {"file": "ridge.pkl", "name": "Ridge Regression"},
+        "lasso": {"file": "lasso.pkl", "name": "Lasso Regression"},
+        "elasticnet": {"file": "elasticnet.pkl", "name": "ElasticNet"},
+        "rf": {"file": "random_forest.pkl", "name": "Random Forest"},
+        "gbr": {"file": "gradient_boosting.pkl", "name": "Gradient Boosting"},
+        "xgb": {"file": "xgboost_regressor.pkl", "name": "XGBoost Regressor"},
+        "lgbm": {"file": "lightgbm_regressor.pkl", "name": "LightGBM Regressor"},
+        "svr": {"file": "svr.pkl", "name": "Support Vector Regression"},
+        "knn": {"file": "knn_regressor.pkl", "name": "K-Nearest Neighbors"},
+    }
+
+_DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+MODEL_DIR = os.getenv("MODEL_DIR", str(_DEFAULT_DATA_DIR) if _DEFAULT_DATA_DIR.exists() else "data")
 
 # cache for loaded models
 _loaded_models: Dict[str, object] = {}
