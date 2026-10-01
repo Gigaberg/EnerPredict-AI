@@ -26,3 +26,11 @@ env/
 
 # Logs
 *.log
+
+# Large datasets & local artifacts
+*.csv
+.freebuff/
+Backend/data/
+Dataset/
+Backend/models/*.pkl
+reports/

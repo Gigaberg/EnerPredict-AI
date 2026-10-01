@@ -82,6 +82,33 @@ class PredictIn(BaseModel):
     features: List[float]
     meta: Optional[Dict[str, Any]] = {}
 
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "house_id": "home_001",
+                "model": "xgb",
+                "features": [
+                    1,      # season              (0=Spring 1=Summer 2=Fall 3=Winter)
+                    1875.0, # total_sqft
+                    52,     # house_age           (years since construction)
+                    1,      # has_solar           (0 or 1)
+                    6.25,   # pv_size_kw
+                    0,      # building_type_code  (0=Single-Family 1=TownHome 2=Other)
+                    18,     # num_monitored_circuits
+                    18.5,   # avg_daily_kwh
+                    4.2,    # peak_15min_kw
+                    1.1,    # std_consumption_kw
+                    0.72,   # daytime_ratio
+                    0.28,   # night_ratio
+                    210.0,  # solar_generation_kwh
+                    360.0,  # grid_consumption_kwh
+                    50.0,   # energy_sold_kwh
+                    0.37    # solar_offset_ratio
+                ],
+                "meta": {"source": "pecan_street", "month": 7, "year": 2019}
+            }
+        }
+
 
 @router.get("/models")
 def get_models():

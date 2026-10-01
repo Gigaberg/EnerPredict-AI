@@ -1,14 +1,14 @@
-[
-  "total_appliance_power",
-  "appliance_count",
-  "avg_power_per_appliance",
-  "MonthlyHours",
-  "TariffRate",
-  "consumption_per_hour",
-  "SolarGeneration_kWh",
-  "GridConsumption_kWh",
-  "EnergySold_kWh",
-  "Month_num",
-  "City_code",
-  "Company_code"
-]
+{
+  "feature_order": [
+    "season",
+    "total_sqft",
+    "house_age",
+    "has_solar",
+    "pv_size_kw",
+    "building_type_code",
+    "num_monitored_circuits",
+    "peak_15min_kw",
+    "std_consumption_kw",
+    "daytime_ratio"
+  ]
+}

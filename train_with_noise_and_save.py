@@ -1,7 +1,63 @@
 """
-Train models with small Gaussian noise added to the target (Option A).
-Saves models and scaler to OUTPUT_MODEL_DIR (set below).
-Generates evaluation metrics and plots for report.
+train_with_noise_and_save.py
+============================
+Train 10 regression models on the Pecan Street household energy dataset,
+then save the trained models + scaler to Backend/data/ so the FastAPI
+server can serve them immediately.
+
+MODELS (10 total)
+-----------------
+Linear / Regularized:
+    linear_regression   LinearRegression
+    ridge               Ridge (L2)
+    lasso               Lasso (L1)
+    elasticnet          ElasticNet (L1+L2)
+
+Tree-Based:
+    random_forest       RandomForestRegressor
+    gradient_boosting   GradientBoostingRegressor
+    xgboost_regressor   XGBRegressor
+    lightgbm_regressor  LGBMRegressor
+
+Other:
+    svr                 Support Vector Regression
+    knn_regressor       K-Nearest Neighbors
+
+DATASET
+-------
+Run prepare_pecan_dataset.py first to generate pecan_train_ready.csv.
+That script reads preprocessed_data.csv and aggregates 15-minute
+Pecan Street readings into monthly per-home rows and joins household
+metadata.
+
+FEATURES (10 total -> MODEL_FEATURES list below) - NO DATA LEAKAGE
+------------------------------------------------------------------
+Temporal
+    season                  int   0=Spring 1=Summer 2=Fall 3=Winter
+
+Home metadata (static - available before prediction)
+    total_sqft              float total square footage (0 if unknown)
+    house_age               int   2019 - construction_year
+    has_solar               int   1 if PV system present else 0
+    pv_size_kw              float total PV capacity kW (0 if none)
+    building_type_code      int   0=Single-Family 1=TownHome 2=Apt/Other
+    num_monitored_circuits  int   count of monitored circuits in home
+
+Usage pattern features (lag/history - available BEFORE prediction)
+    peak_15min_kw           float max 15-min grid reading in month (kW)
+    std_consumption_kw      float std-dev of 15-min grid readings
+    daytime_ratio           float fraction of consumption 06:00-22:00
+
+TARGET
+    house_consumption_kwh   float total monthly household kWh consumed
+
+REMOVED LEAKY FEATURES (to prevent data leakage):
+    grid_consumption_kwh    IS the target (house_consumption = grid draw)
+    avg_daily_kwh           derived from target (consumption / days)
+    energy_sold_kwh         contains target (solar - consumption)
+    solar_offset_ratio      contains target (solar / consumption)
+    solar_generation_kwh    same-month generation (not available beforehand)
+    night_ratio             redundant with daytime_ratio (night = 1 - daytime)
 
 Usage:
     python train_with_noise_and_save.py
@@ -10,192 +66,386 @@ Usage:
 import os
 import json
 import joblib
+import warnings
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.svm import SVR
+from sklearn.neighbors import KNeighborsRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
 
-# ----------------- CONFIG -----------------
-DATA_CSV = "D:/AIRES_Project/reports/eda_v2/train_ready_v2.csv"   # path to your CSV
-FEATURE_ORDER_PATH = "AIRES_Backend/data/feature_order.json"  # path to feature_order.json
-TARGET_NAME = "HouseConsumption_kWh"   # target column name
-OUTPUT_MODEL_DIR = "D:/AIRES_Project/reports"  # where backend expects models (adjust if needed)
-REPORT_DIR = "reports/final_models"    # where metrics/plots will be saved
-NOISE_SIGMA = 5.0                      # standard deviation of Gaussian noise added to target
+warnings.filterwarnings("ignore", category=UserWarning, module="lightgbm")
+
+# ============================================================
+#  CONFIG
+# ============================================================
+
+DATA_CSV         = "pecan_train_ready.csv"
+TARGET_NAME      = "house_consumption_kwh"
+OUTPUT_MODEL_DIR = os.path.join("Backend", "data")
+REPORT_DIR       = os.path.join("reports", "final_models")
+
+# Gaussian noise added to target during training (regularisation)
+NOISE_SIGMA  = 2.0
 RANDOM_STATE = 42
-TEST_SIZE = 0.30
-N_JOBS = -1
-# ------------------------------------------
+TEST_SIZE    = 0.20   # 80/20 split (dataset is small: 150 rows)
+N_JOBS       = -1
+
+# ============================================================
+#  FEATURE LIST  (must match prepare_pecan_dataset.py output)
+# ============================================================
+
+MODEL_FEATURES = [
+    # temporal
+    "season",
+    # home metadata (static - available before prediction)
+    "total_sqft",
+    "house_age",
+    "has_solar",
+    "pv_size_kw",
+    "building_type_code",
+    "num_monitored_circuits",
+    # usage pattern features (lag/history - available BEFORE prediction)
+    "peak_15min_kw",
+    "std_consumption_kw",
+    "daytime_ratio",
+]
+# NOTE: 10 features total (down from 16 after removing leaky features)
+# Removed: grid_consumption_kwh (IS target), avg_daily_kwh (derived from target),
+#          energy_sold_kwh (contains target), solar_offset_ratio (contains target),
+#          solar_generation_kwh (same-month), night_ratio (redundant with daytime_ratio)
+
+# ============================================================
+#  SETUP
+# ============================================================
 
 os.makedirs(OUTPUT_MODEL_DIR, exist_ok=True)
 os.makedirs(REPORT_DIR, exist_ok=True)
 
-# ---------- helpers ----------
+# ============================================================
+#  HELPERS
+# ============================================================
+
 def safe_mape(y_true, y_pred):
-    y_true = np.asarray(y_true)
-    y_pred = np.asarray(y_pred)
+    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
     mask = y_true != 0
     if mask.sum() == 0:
         return None
     return float(np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100.0)
 
 def smape(y_true, y_pred):
-    y_true = np.asarray(y_true)
-    y_pred = np.asarray(y_pred)
+    y_true, y_pred = np.asarray(y_true), np.asarray(y_pred)
     denom = np.abs(y_true) + np.abs(y_pred)
     mask = denom != 0
     if mask.sum() == 0:
         return None
-    return float(np.mean((2.0 * np.abs(y_pred - y_true)[mask] / denom[mask])) * 100.0)
+    return float(np.mean(2.0 * np.abs(y_pred[mask] - y_true[mask]) / denom[mask]) * 100.0)
 
 def eval_metrics(y_true, y_pred):
-    rmse = float(np.sqrt(mean_squared_error(y_true, y_pred)))
-    mae  = float(mean_absolute_error(y_true, y_pred))
-    r2   = float(r2_score(y_true, y_pred))
-    mape_s = safe_mape(y_true, y_pred)
-    smape_v = smape(y_true, y_pred)
-    return {"RMSE": rmse, "MAE": mae, "R2": r2, "MAPE_safe": mape_s, "SMAPE": smape_v}
+    return {
+        "RMSE":  float(np.sqrt(mean_squared_error(y_true, y_pred))),
+        "MAE":   float(mean_absolute_error(y_true, y_pred)),
+        "R2":    float(r2_score(y_true, y_pred)),
+        "MAPE":  safe_mape(y_true, y_pred),
+        "SMAPE": smape(y_true, y_pred),
+    }
 
-# ---------- load feature order ----------
-with open(FEATURE_ORDER_PATH, "r") as f:
-    fo = json.load(f)
-    feature_order = fo["feature_order"] if isinstance(fo, dict) and "feature_order" in fo else fo
+# ============================================================
+#  LOAD DATASET
+# ============================================================
 
-print("Loaded feature_order len:", len(feature_order))
+print(f"Loading dataset: {DATA_CSV}")
+if not os.path.exists(DATA_CSV):
+    raise FileNotFoundError(
+        f"{DATA_CSV} not found.\n"
+        "Run  python prepare_pecan_dataset.py  first."
+    )
 
-# ---------- load dataset ----------
 df = pd.read_csv(DATA_CSV)
-print("Loaded data shape:", df.shape)
+print(f"  Shape: {df.shape}  |  Homes: {df['dataid'].nunique()}  |  "
+      f"Months: {df['month'].nunique()}")
+
+# ============================================================
+#  VALIDATE FEATURES
+# ============================================================
+
+missing = [f for f in MODEL_FEATURES if f not in df.columns]
+if missing:
+    raise RuntimeError(
+        f"These features are missing from {DATA_CSV}:\n  {missing}\n"
+        "Re-run prepare_pecan_dataset.py to regenerate the file."
+    )
+
 if TARGET_NAME not in df.columns:
-    raise RuntimeError(f"Target column '{TARGET_NAME}' not found in CSV")
+    raise RuntimeError(f"Target column '{TARGET_NAME}' not found in {DATA_CSV}.")
 
-print("Target summary BEFORE noise:\n", df[TARGET_NAME].describe())
-print("Zeros in target BEFORE noise:", int((df[TARGET_NAME] == 0).sum()))
+print(f"\nTarget '{TARGET_NAME}' summary:\n{df[TARGET_NAME].describe().to_string()}")
 
-# ---------- add gaussian noise ----------
-np.random.seed(RANDOM_STATE)
-noise = np.random.normal(loc=0.0, scale=NOISE_SIGMA, size=len(df))
-df[TARGET_NAME] = df[TARGET_NAME] + noise
-# ensure no negative energy (clip)
-df[TARGET_NAME] = df[TARGET_NAME].clip(lower=0.0)
+# ============================================================
+#  OPTIONAL: ADD GAUSSIAN NOISE TO TARGET
+# ============================================================
 
-print("Target summary AFTER noise:\n", df[TARGET_NAME].describe())
-print("Zeros in target AFTER noise:", int((df[TARGET_NAME] == 0).sum()))
+if NOISE_SIGMA > 0:
+    np.random.seed(RANDOM_STATE)
+    noise = np.random.normal(0.0, NOISE_SIGMA, len(df))
+    df[TARGET_NAME] = (df[TARGET_NAME] + noise).clip(lower=0.0)
+    print(f"\nApplied Gaussian noise sigma={NOISE_SIGMA} to target.")
 
-# ---------- build X and y ----------
-X = df[feature_order].copy()
-if TARGET_NAME in X.columns:
-    print("Dropping target from features (safety):", TARGET_NAME)
-    X = X.drop(columns=[TARGET_NAME])
+# ============================================================
+#  BUILD X, y
+# ============================================================
+
+X = df[MODEL_FEATURES].copy()
 y = df[TARGET_NAME].values
 
-print("X shape, y shape:", X.shape, y.shape)
+print(f"\nX shape: {X.shape}  |  y shape: {y.shape}")
+print(f"Features ({len(MODEL_FEATURES)}):\n  {MODEL_FEATURES}")
 
-# ---------- split ----------
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE,
-                                                    random_state=RANDOM_STATE, shuffle=True)
-print("Train/Test shapes:", X_train.shape, X_test.shape)
+# ============================================================
+#  TRAIN / TEST SPLIT
+# ============================================================
 
-# ---------- scaler ----------
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, shuffle=True
+)
+print(f"\nTrain: {X_train.shape}  |  Test: {X_test.shape}")
+
+# ============================================================
+#  SCALE
+# ============================================================
+
 scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+X_train_s = scaler.fit_transform(X_train)
+X_test_s  = scaler.transform(X_test)
 
-# ---------- models ----------
-lr = LinearRegression()
-rf = RandomForestRegressor(n_estimators=200, random_state=RANDOM_STATE, n_jobs=N_JOBS)
-xgb = XGBRegressor(n_estimators=300, learning_rate=0.05, random_state=RANDOM_STATE, verbosity=0, n_jobs=N_JOBS)
+# ============================================================
+#  DEFINE ALL 10 MODELS
+# ============================================================
+# Hyperparameters tuned for small dataset (150 rows, 16 features)
 
-print("Training LinearRegression...")
-lr.fit(X_train_scaled, y_train)
-print("Training RandomForest...")
-rf.fit(X_train_scaled, y_train)
-print("Training XGBoost...")
-xgb.fit(X_train_scaled, y_train)
+models = {
+    # --- Linear / Regularized ---
+    "linear_regression": LinearRegression(),
 
-# ---------- evaluate ----------
+    "ridge": Ridge(
+        alpha=1.0,
+    ),
+
+    "lasso": Lasso(
+        alpha=1.0,
+        max_iter=10000,
+    ),
+
+    "elasticnet": ElasticNet(
+        alpha=1.0,
+        l1_ratio=0.5,
+        max_iter=10000,
+    ),
+
+    # --- Tree-Based ---
+    "random_forest": RandomForestRegressor(
+        n_estimators=300,
+        max_depth=6,
+        min_samples_leaf=5,
+        random_state=RANDOM_STATE,
+        n_jobs=N_JOBS,
+    ),
+
+    "gradient_boosting": GradientBoostingRegressor(
+        n_estimators=200,
+        max_depth=4,
+        learning_rate=0.05,
+        subsample=0.8,
+        random_state=RANDOM_STATE,
+    ),
+
+    "xgboost_regressor": XGBRegressor(
+        n_estimators=200,
+        max_depth=4,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=RANDOM_STATE,
+        verbosity=0,
+        n_jobs=N_JOBS,
+    ),
+
+    "lightgbm_regressor": LGBMRegressor(
+        n_estimators=200,
+        max_depth=4,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        min_child_samples=10,
+        random_state=RANDOM_STATE,
+        verbose=-1,
+        n_jobs=N_JOBS,
+    ),
+
+    # --- Other ---
+    "svr": SVR(
+        kernel="rbf",
+        C=10,
+        gamma="scale",
+    ),
+
+    "knn_regressor": KNeighborsRegressor(
+        n_neighbors=7,
+    ),
+}
+
+# ============================================================
+#  TRAIN + EVALUATE
+# ============================================================
+
 results = {}
-for name, model in [("linear", lr), ("rf", rf), ("xgb", xgb)]:
-    preds = model.predict(X_test_scaled)
+for name, model in models.items():
+    print(f"\nTraining {name}...")
+    model.fit(X_train_s, y_train)
+    preds = model.predict(X_test_s)
     metrics = eval_metrics(y_test, preds)
     results[name] = metrics
-    print(f"\n{name} metrics:", metrics)
+    print(f"  RMSE={metrics['RMSE']:.3f}  MAE={metrics['MAE']:.3f}  "
+          f"R2={metrics['R2']:.4f}  MAPE={metrics['MAPE']:.2f}%")
 
-# ---------- save models & scaler ----------
-joblib.dump(lr, os.path.join(OUTPUT_MODEL_DIR, "linear_regression.pkl"))
-joblib.dump(rf, os.path.join(OUTPUT_MODEL_DIR, "random_forest.pkl"))
-joblib.dump(xgb, os.path.join(OUTPUT_MODEL_DIR, "xgboost_regressor.pkl"))
-joblib.dump(scaler, os.path.join(OUTPUT_MODEL_DIR, "scaler.pkl"))
+    # 5-fold CV on training set for extra confidence
+    try:
+        cv_scores = cross_val_score(
+            model, X_train_s, y_train,
+            cv=5, scoring="r2", n_jobs=N_JOBS
+        )
+        print(f"  5-fold CV R2: mean={cv_scores.mean():.4f}  std={cv_scores.std():.4f}")
+        results[name]["cv_r2_mean"] = float(cv_scores.mean())
+        results[name]["cv_r2_std"]  = float(cv_scores.std())
+    except Exception as e:
+        print(f"  CV skipped: {e}")
+        results[name]["cv_r2_mean"] = None
+        results[name]["cv_r2_std"]  = None
 
-print("Saved models and scaler to:", OUTPUT_MODEL_DIR)
+# ============================================================
+#  PICK BEST MODEL
+# ============================================================
 
-# ---------- save metrics json ----------
+best_name = max(results, key=lambda n: results[n]["R2"] if results[n]["R2"] is not None else -1)
+print(f"\nBest model by R2: {best_name}  (R2={results[best_name]['R2']:.4f})")
+
+# ============================================================
+#  SAVE MODELS, SCALER, FEATURE ORDER
+# ============================================================
+
+for name, model in models.items():
+    out_path = os.path.join(OUTPUT_MODEL_DIR, f"{name}.pkl")
+    joblib.dump(model, out_path)
+    print(f"Saved {out_path}")
+
+scaler_path = os.path.join(OUTPUT_MODEL_DIR, "scaler.pkl")
+joblib.dump(scaler, scaler_path)
+print(f"Saved {scaler_path}")
+
+feature_order_path = os.path.join(OUTPUT_MODEL_DIR, "feature_order.json")
+with open(feature_order_path, "w") as fh:
+    json.dump({"feature_order": MODEL_FEATURES}, fh, indent=2)
+print(f"Saved {feature_order_path}")
+
+# Also write a copy to FrontEnd/models for the JS validation layer
+fe_feature_path = os.path.join("FrontEnd", "models", "feature_order.json")
+os.makedirs(os.path.dirname(fe_feature_path), exist_ok=True)
+with open(fe_feature_path, "w") as fh:
+    json.dump({"feature_order": MODEL_FEATURES}, fh, indent=2)
+print(f"Saved {fe_feature_path}")
+
+# ============================================================
+#  SAVE METRICS
+# ============================================================
+
 metrics_path = os.path.join(REPORT_DIR, "model_metrics.json")
 with open(metrics_path, "w") as fh:
-    json.dump(results, fh, indent=2)
-print("Saved metrics to", metrics_path)
+    json.dump({"best_model": best_name, "models": results}, fh, indent=2)
+print(f"\nMetrics saved: {metrics_path}")
 
-# ---------- plots: pred vs actual for each model ----------
+# ============================================================
+#  SUMMARY TABLE
+# ============================================================
+
+print("\n== Final Results " + "=" * 60)
+print(f"  {'Model':<25s} {'RMSE':>8s} {'MAE':>8s} {'R2':>8s} {'MAPE':>8s} {'CV R2':>8s}")
+print("  " + "-" * 70)
+for name, m in sorted(results.items(), key=lambda x: x[1]["R2"] if x[1]["R2"] is not None else -1, reverse=True):
+    marker = " <-- BEST" if name == best_name else ""
+    cv_str = f"{m['cv_r2_mean']:.4f}" if m.get("cv_r2_mean") is not None else "N/A"
+    print(f"  {name:<25s} {m['RMSE']:>8.3f} {m['MAE']:>8.3f} {m['R2']:>8.4f} {m['MAPE']:>7.2f}% {cv_str:>8s}{marker}")
+
+# ============================================================
+#  DIAGNOSTIC PLOTS
+# ============================================================
+
 def plot_pred_vs_actual(y_true, y_pred, title, fpath):
-    plt.figure(figsize=(6,5))
-    plt.scatter(y_true, y_pred, s=12, alpha=0.4)
+    plt.figure(figsize=(6, 5))
+    plt.scatter(y_true, y_pred, s=18, alpha=0.5, edgecolors="none")
     mn = min(y_true.min(), y_pred.min())
     mx = max(y_true.max(), y_pred.max())
-    plt.plot([mn, mx], [mn, mx], "k--", linewidth=1)
-    plt.xlabel("Actual")
-    plt.ylabel("Predicted")
+    plt.plot([mn, mx], [mn, mx], "k--", linewidth=1, label="perfect fit")
+    plt.xlabel("Actual (kWh)")
+    plt.ylabel("Predicted (kWh)")
     plt.title(title)
+    plt.legend(fontsize=8)
     plt.tight_layout()
     plt.savefig(fpath, dpi=150)
     plt.close()
 
-plot_pred_vs_actual(y_test, lr.predict(X_test_scaled), "LinearPred vs Actual", os.path.join(REPORT_DIR, "pred_vs_actual_linear.png"))
-plot_pred_vs_actual(y_test, rf.predict(X_test_scaled), "RFPred vs Actual", os.path.join(REPORT_DIR, "pred_vs_actual_rf.png"))
-plot_pred_vs_actual(y_test, xgb.predict(X_test_scaled), "XGBPred vs Actual", os.path.join(REPORT_DIR, "pred_vs_actual_xgb.png"))
-
-# ---------- residuals plot for RF & XGB ----------
 def plot_residuals(y_true, y_pred, title, fpath):
     res = y_true - y_pred
-    plt.figure(figsize=(6,4))
-    plt.scatter(y_pred, res, s=10, alpha=0.4)
+    plt.figure(figsize=(6, 4))
+    plt.scatter(y_pred, res, s=14, alpha=0.5, edgecolors="none")
     plt.axhline(0, color="k", linestyle="--", linewidth=1)
-    plt.xlabel("Predicted")
+    plt.xlabel("Predicted (kWh)")
     plt.ylabel("Residual (Actual - Predicted)")
     plt.title(title)
     plt.tight_layout()
     plt.savefig(fpath, dpi=150)
     plt.close()
 
-plot_residuals(y_test, rf.predict(X_test_scaled), "RF Residuals", os.path.join(REPORT_DIR, "residuals_rf.png"))
-plot_residuals(y_test, xgb.predict(X_test_scaled), "XGB Residuals", os.path.join(REPORT_DIR, "residuals_xgb.png"))
-
-# ---------- feature importances (RF and XGB) ----------
-feat_names = X.columns.tolist()
-def save_feature_importances(model, name, outpath, topk=20):
-    if hasattr(model, "feature_importances_"):
-        imp = model.feature_importances_
-    else:
-        print("Model", name, "has no feature_importances_")
+def plot_feature_importances(model, name, feat_names, fpath, topk=16):
+    if not hasattr(model, "feature_importances_"):
         return
+    imp = model.feature_importances_
     idx = np.argsort(imp)[::-1][:topk]
     labels = [feat_names[i] for i in idx]
-    vals = imp[idx]
-    plt.figure(figsize=(6,6))
-    plt.barh(range(len(vals))[::-1], vals, align="center")
-    plt.yticks(range(len(vals))[::-1], labels)
+    vals   = imp[idx]
+    plt.figure(figsize=(7, 5))
+    plt.barh(range(len(vals))[::-1], vals, align="center", color="steelblue")
+    plt.yticks(range(len(vals))[::-1], labels, fontsize=9)
     plt.xlabel("Importance")
-    plt.title(f"Top {len(vals)} Feature Importances ({name})")
+    plt.title(f"Feature Importances - {name}")
     plt.tight_layout()
-    plt.savefig(outpath, dpi=150)
+    plt.savefig(fpath, dpi=150)
     plt.close()
 
-save_feature_importances(rf, "RandomForest", os.path.join(REPORT_DIR, "rf_feature_importances.png"))
-save_feature_importances(xgb, "XGBoost", os.path.join(REPORT_DIR, "xgb_feature_importances.png"))
+for name, model in models.items():
+    preds = model.predict(X_test_s)
+    plot_pred_vs_actual(
+        y_test, preds,
+        f"{name} - Predicted vs Actual",
+        os.path.join(REPORT_DIR, f"pred_vs_actual_{name}.png"),
+    )
+    plot_residuals(
+        y_test, preds,
+        f"{name} - Residuals",
+        os.path.join(REPORT_DIR, f"residuals_{name}.png"),
+    )
+    plot_feature_importances(
+        model, name, MODEL_FEATURES,
+        os.path.join(REPORT_DIR, f"feat_importance_{name}.png"),
+    )
 
-print("Saved plots to", REPORT_DIR)
-print("Done.")
+print(f"\nPlots saved to {REPORT_DIR}/")
+print("\nDone. Start the backend with:")
+print("    cd Backend && uvicorn main:app --reload")

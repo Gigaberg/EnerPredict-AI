@@ -1,7 +1,29 @@
 {
-  "grid_p95": 228.94788187403282,
-  "grid_p99": 336.0150755333202,
-  "monthly_min": 240.44,
-  "monthly_max": 789.0,
-  "total_power_p99": 76.0
+  "_comment": "Validation bounds derived from Pecan Street Ithaca dataset (May-Oct 2019, 25 homes).",
+
+  "features": {
+    "season":                  { "min": 0,    "max": 3,     "type": "int",   "label": "Season (0=Spring 1=Summer 2=Fall 3=Winter)" },
+    "total_sqft":              { "min": 0,    "max": 10000, "type": "float", "label": "Total square footage" },
+    "house_age":               { "min": 0,    "max": 200,   "type": "int",   "label": "House age (years)" },
+    "has_solar":               { "min": 0,    "max": 1,     "type": "int",   "label": "Has solar PV (0 or 1)" },
+    "pv_size_kw":              { "min": 0,    "max": 30,    "type": "float", "label": "PV system size (kW)" },
+    "building_type_code":      { "min": 0,    "max": 2,     "type": "int",   "label": "Building type (0=Single-Family 1=TownHome 2=Other)" },
+    "num_monitored_circuits":  { "min": 0,    "max": 80,    "type": "int",   "label": "Number of monitored circuits" },
+    "avg_daily_kwh":           { "min": 0,    "max": 200,   "type": "float", "label": "Average daily consumption (kWh)" },
+    "peak_15min_kw":           { "min": 0,    "max": 30,    "type": "float", "label": "Peak 15-min grid reading (kW)" },
+    "std_consumption_kw":      { "min": 0,    "max": 20,    "type": "float", "label": "Std-dev of 15-min grid readings (kW)" },
+    "daytime_ratio":           { "min": 0,    "max": 1,     "type": "float", "label": "Fraction of consumption during daytime (0-1)" },
+    "night_ratio":             { "min": 0,    "max": 1,     "type": "float", "label": "Fraction of consumption during night (0-1)" },
+    "solar_generation_kwh":    { "min": 0,    "max": 2000,  "type": "float", "label": "Monthly solar generation (kWh)" },
+    "grid_consumption_kwh":    { "min": 0,    "max": 5000,  "type": "float", "label": "Monthly grid consumption (kWh)" },
+    "energy_sold_kwh":         { "min": 0,    "max": 2000,  "type": "float", "label": "Monthly energy sold back to grid (kWh)" },
+    "solar_offset_ratio":      { "min": 0,    "max": 1,     "type": "float", "label": "Solar offset ratio (0-1)" }
+  },
+
+  "target": {
+    "label":       "house_consumption_kwh",
+    "unit":        "kWh",
+    "typical_min": 50,
+    "typical_max": 4000
+  }
 }
